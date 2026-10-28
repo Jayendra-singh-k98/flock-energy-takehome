@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Urja Meter Ops — Modern Integration Bridge</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header / Navbar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <h1>Urja Meter Ops <span style="font-size: 0.8rem; opacity: 0.8;">API & Dashboard</span></h1>
+          <span>Flock Energy Utility Modernization Bridge</span>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <span id="sync-badge" class="badge badge-success">● Cache Active</span>
+        <button id="btn-sync" class="btn btn-secondary">↻ Sync Now</button>
+        <a href="/docs" target="_blank" class="btn btn-primary">📖 OpenAPI Docs</a>
+      </div>
+    </header>
+
+    <!-- Top KPI Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card cyan">
+        <div class="kpi-label">Total Meters</div>
+        <div class="kpi-value" id="kpi-total-meters">—</div>
+        <div class="kpi-sub" id="kpi-sub-sync">Synchronized from portal</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-label">Installed</div>
+        <div class="kpi-value" id="kpi-installed">—</div>
+        <div class="kpi-sub">Active in network</div>
+      </div>
+      <div class="kpi-card amber">
+        <div class="kpi-label">Faulty Status</div>
+        <div class="kpi-value" id="kpi-faulty">—</div>
+        <div class="kpi-sub">Requires field check</div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-label">Decommissioned</div>
+        <div class="kpi-value" id="kpi-decommissioned">—</div>
+        <div class="kpi-sub">Retired from service</div>
+      </div>
+      <div class="kpi-card blue">
+        <div class="kpi-label">Distribution Transformers</div>
+        <div class="kpi-value" id="kpi-dts">—</div>
+        <div class="kpi-sub" id="kpi-capacity">Capacity: — kVA</div>
+      </div>
+    </div>
+
+    <!-- Tab Header Navigation -->
+    <div class="tabs-header">
+      <button class="tab-btn active" data-tab="tab-meters">Meter Fleet Explorer</button>
+      <button class="tab-btn" data-tab="tab-map">Geospatial Grid Map</button>
+      <button class="tab-btn" data-tab="tab-telemetry">Telemetry & Consumption</button>
+      <button class="tab-btn" data-tab="tab-hierarchy">Network Hierarchy</button>
+      <button class="tab-btn" data-tab="tab-transformers">Transformers (DTs)</button>
+    </div>
+
+    <!-- Tab 1: Meters Fleet Explorer -->
+    <div id="tab-meters" class="tab-content active">
+      <div class="filter-bar">
+        <input type="text" id="filter-q" class="search-input" placeholder="Search by Meter ID (e.g. J100000) or Hardware Serial (e.g. SE33962)...">
+        <select id="filter-make" class="select-filter">
+          <option value="">All Makes</option>
+          <option value="HPL">HPL</option>
+          <option value="Genus">Genus</option>
+          <option value="Secure">Secure</option>
+          <option value="Allied">Allied</option>
+          <option value="L&T">L&T</option>
+        </select>
+        <select id="filter-phase" class="select-filter">
+          <option value="">All Phases</option>
+          <option value="single">Single Phase</option>
+          <option value="three">Three Phase</option>
+        </select>
+        <select id="filter-status" class="select-filter">
+          <option value="">All Statuses</option>
+          <option value="Installed">Installed</option>
+          <option value="Faulty">Faulty</option>
+          <option value="Decommissioned">Decommissioned</option>
+        </select>
+        <select id="filter-dt" class="select-filter">
+          <option value="">All DTs</option>
+        </select>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Meter ID</th>
+              <th>Serial Number</th>
+              <th>Make</th>
+              <th>Phase</th>
+              <th>Status</th>
+              <th>DT Code</th>
+              <th>Build</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="meters-table-body">
+            <tr><td colspan="8" style="text-align:center; padding: 24px;">Loading smart meter records...</td></tr>
+          </tbody>
+        </table>
+        <div class="pagination">
+          <button id="btn-prev" class="btn btn-secondary" disabled>← Previous</button>
+          <span id="page-info">Page 1 of 1</span>
+          <button id="btn-next" class="btn btn-secondary" disabled>Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Geospatial Map -->
+    <div id="tab-map" class="tab-content">
+      <div style="margin-bottom: 12px; color: var(--text-muted); font-size: 0.85rem;">
+        📍 Interactive smart meter deployment map across Jaipur utility network. Color pins indicate operational status.
+      </div>
+      <div id="meters-map"></div>
+    </div>
+
+    <!-- Tab 3: Telemetry & Consumption Viewer -->
+    <div id="tab-telemetry" class="tab-content">
+      <div class="filter-bar">
+        <input type="text" id="telemetry-meter-input" class="search-input" value="J100000" placeholder="Enter Meter ID (e.g. J100000)...">
+        <button id="btn-load-telemetry" class="btn btn-primary">Load Telemetry Readings</button>
+      </div>
+
+      <div class="kpi-grid" id="telemetry-summary-cards" style="margin-top: 16px;">
+        <div class="kpi-card cyan">
+          <div class="kpi-label">Interval Readings</div>
+          <div class="kpi-value" id="telemetry-readings-count">—</div>
+          <div class="kpi-sub">30-min telemetry intervals</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-label">Window Consumption</div>
+          <div class="kpi-value" id="telemetry-kwh-delta">—</div>
+          <div class="kpi-sub">Total active kWh delta</div>
+        </div>
+        <div class="kpi-card amber">
+          <div class="kpi-label">Avg Voltage (Phase R)</div>
+          <div class="kpi-value" id="telemetry-avg-voltage">—</div>
+          <div class="kpi-sub" id="telemetry-voltage-range">Min: — | Max: —</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-label">Voltage Status</div>
+          <div class="kpi-value" id="telemetry-anomaly-badge" style="font-size: 1.25rem;">—</div>
+          <div class="kpi-sub">Tolerance: 210V - 250V</div>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <h3 style="margin-bottom: 16px; font-size: 1rem; color: var(--text-muted);">Energy Consumption Curve (kWh) & Voltage (Phase R)</h3>
+        <canvas id="telemetry-chart" height="90"></canvas>
+      </div>
+    </div>
+
+    <!-- Tab 4: Network Hierarchy Explorer -->
+    <div id="tab-hierarchy" class="tab-content">
+      <div style="margin-bottom: 12px; color: var(--text-muted); font-size: 0.85rem;">
+        🌲 Reconstructed 7-tier distribution network: Zone ➔ Circle ➔ Division ➔ Subdivision ➔ Substation ➔ Feeder ➔ DT.
+      </div>
+      <div class="tree-container" id="hierarchy-tree-root">
+        <p style="color: var(--text-muted);">Loading network topology...</p>
+      </div>
+    </div>
+
+    <!-- Tab 5: Distribution Transformers -->
+    <div id="tab-transformers" class="tab-content">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>DT Code</th>
+              <th>Name</th>
+              <th>Feeder</th>
+              <th>Rated Capacity</th>
+              <th>Connected Meters</th>
+              <th>Installed</th>
+              <th>Faulty</th>
+              <th>Decommissioned</th>
+            </tr>
+          </thead>
+          <tbody id="transformers-table-body">
+            <tr><td colspan="8" style="text-align:center; padding: 24px;">Loading transformers...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div class="modal-overlay" id="detail-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-meter-title">Meter Details</h2>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
+      <div id="modal-content">
+        <!-- Injected via JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
